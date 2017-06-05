@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset=utf-8>
+	<title>Alo14 Model House</title>
+	<style>
+		body
+		{ 
+			margin: 0px;
+			overflow: hidden;
+			position: fixed;
+		}
+		canvas { width: 100%; height: 100% }
+	</style>
+</head>
+<body>
+
+	<script src="three.js"></script>
+	<script src="stats.min.js"></script>
+	<script src="PointerLockControls.js"></script>
+	<script src="jquery-2.2.4.js"></script>
+	<script>
+			var clock = new THREE.Clock();
+			var camera, scene, renderer, stats, i, j, k;
+			var sunlight;
+			var textureLoader;
+			//TEXTURES
+			var txtrGrass, txtrHouse, txtrKids, txtrcarpet, txtrDoor, txtrRoofTiles,
+			txtrRug1, txtrBed, txtrTable, txtrHousePart, txtrBird, txtrKidsRug, txtrStatic;
+			//MATERIALS
+			var matGrass, matHouse1, matKids, matCarpet, matRoof, matRoofTiles,
+			matDoor, matWindow, matKidsRoom, matBed, matBed2, matPillow, matRug, matTable,
+			matTableLeg, matHousePart, matBird, matKidsRug, matStatic, matPlant, matBulb;
+			//GEOMETRIES
+			var geoGrass, geoHouse1, geoHouse2, geohouse3, geoKids, geoKids2, geoRoof, 
+			geoDoor, geoWindow, geoBed, geoPillow, geoRug, geoTable,
+			geoTableLeg, geoHousePart1, geoBird, geoKidsRug, geoStatic, geoPlant, geoBulb;
+			//MESHES
+			var grass, houseRoom1, houseRoom2, houseRoom3, roof1, roof2, bed, pillow,
+			rug, kidsRug, static;
+			//MESH ARRAYS
+			var houseParts, houseParts2, kidsWall, windows, doors, birds;
+			birds = [];
+			//LIGHTS
+			var lights = [];
+			var lightbulbs = [];
+			//MODELS
+			var plantpot = new THREE.Object3D();
+			var teapot = new THREE.Object3D();
+			var toycar = new THREE.Object3D();
+			var tv = new THREE.Object3D();
+			var chairs = [];
+			for(i=0;i<3;i++)
+			{
+				chairs[i] = new THREE.Object3D();
+			}
+			var lightshades = [];
+			for(i=0;i<3;i++)
+			{
+				lightshades[i] = new THREE.Object3D();
+			}
+			//ANIMATORS
+			var animStatic;
+			//PLANT HANDLERS
+			var rules = new Rules();
+			var params = new Params();
+			var plants = [];
+			//SCREEN DIMENSIONS
+			var width = window.innerWidth;
+			var height = window.innerHeight;
+			//KEYBOARD CONTROLS
+			var controls, havePointerLock, controlsEnabled, flyingEnabled;
+			//LOADER FOR BLENDER MODELS
+			var loader = new THREE.JSONLoader();
+			var movespeed = new THREE.Vector3();
+			var carspeed = new THREE.Vector3();
+			//CONTROL BOOLEANS
+			var moveForward = false;
+			var moveBackward = false;
+			var moveLeft = false;
+			var moveRight = false;
+			var carForward = false;
+			var carBackward = false;
+			var carLeft = false;
+			var carRight = false;
+			var birdArc = 0;
+			var birdArc2 = 0;
+			
+
+			init();
+
+			animate();
+
+			//Initialises the renderer and basic necessities such as the ground and ambient lighting
+			//Makes calls to other functions to arrange each part of the scene
+			function init()
+			{
+				renderer =new THREE.WebGLRenderer({antialias: true});
+				renderer.setClearColor(0x7EA6B2, 0.8);
+				renderer.setSize(width, height); 
+				renderer.shadowMap.enabled = true;
+				document.body.appendChild(renderer.domElement);
+				scene = new THREE.Scene();
+
+				camera = new THREE.PerspectiveCamera(60, width / height, 1, 1000);
+				camera.position.set(0,12,0);
+
+				stats = new Stats();
+				stats.domElement.style.position = 'absolute';
+				stats.domElement.style.bottom = '0px';
+				stats.domElement.style.zIndex = 100;
+				document.body.appendChild( stats.domElement );
+
+				//BACKGROUND LIGHT
+				var bglight= new THREE.AmbientLight( 0x404040, 2 ); 
+				scene.add( bglight );
+
+				drawHouse();
+				addFurniture();
+				drawBirds();
+
+				txtrGrass = THREE.ImageUtils.loadTexture("images/grass.png");
+				txtrGrass.wrapS = THREE.RepeatWrapping;
+				txtrGrass.wrapT = THREE.RepeatWrapping; 
+				txtrGrass.repeat.set( 80, 80 );
+				matGrass = new THREE.MeshLambertMaterial( { map: txtrGrass, side: THREE.DoubleSide } );
+				geoGrass = new THREE.PlaneBufferGeometry(1000, 1000, 10, 10);
+				grass = new THREE.Mesh(geoGrass, matGrass);
+				grass.receiveShadow = true;
+				grass.position.y = 0;
+				grass.rotation.x = Math.PI / 2;
+				scene.add(grass);
+
+				loadBlenderModels();
+				tvPlay();
+				drawPlants();
+				lighting();
+				initControls();
+
+			}
+
+			//Animate function updates the renderer, the users movement, and TV animations
+			function animate()
+			{
+				render();
+				requestAnimationFrame(animate);
+				stats.update();
+				userMovement();
+				animations();
+			}
+
+			function render()
+			{
+				camera.updateProjectionMatrix();
+				renderer.render(scene, camera);
+			}
+
+			//Adds point lights to each room and initialises the shadows. Adds bulbs slightly 
+			//above each point light.
+			function lighting()
+			{
+				for (i=0;i<3;i++)
+				{
+					lights[i] = new THREE.PointLight(0xffffff, 1);
+					lights[i].castShadow = true;
+					lights[i].receiveShadow = true;
+					lights[i].shadow.camera.near = 1;
+					lights[i].shadow.camera.far = 48;
+					lights[i].angle = 4;
+					lights[i].distance = 250;
+					lights[i].shadow.darkness = 1;
+					lights[i].shadow.bias = 0.001;
+				}
+				lights[1].distance = 105;
+				lights[1].shadow.camera.far = 48;
+				lights[2].distance = 105;
+				lights[2].shadow.camera.far = 48;
+
+				lights[0].position.set(-20, 50, -150);
+				lights[1].position.set(-50,50,-249);
+				lights[2].position.set(50,50,-250);
+				scene.add(lights[0]);
+				scene.add(lights[1]);
+				scene.add(lights[2]);
+
+				geoBulb = new THREE.SphereGeometry( 1, 10, 10);
+				matBulb = new THREE.MeshBasicMaterial({ color:0xEEEEEE });
+				lightbulbs[0] = new THREE.Mesh(geoBulb, matBulb);
+				lightbulbs[1] = new THREE.Mesh(geoBulb, matBulb);
+				lightbulbs[2] = new THREE.Mesh(geoBulb, matBulb);
+				lightbulbs[0].position.set(0, 59, -150);
+				lightbulbs[1].position.set(-50,59,-250);
+				lightbulbs[2].position.set(50,59,-250);
+				scene.add(lightbulbs[0]);
+				scene.add(lightbulbs[1]);
+				scene.add(lightbulbs[2]);
+			}
+
+			//Initialises and adds each blender model. Certain models didn't work using
+			//textures created in blender, so the textures were created in three.js
+			//instead and added to the mesh.
+			function loadBlenderModels()
+			{
+				
+				loadPotModel('plantpot', plantpot);
+				plantpot.castShadow = true;
+				plantpot.receiveShadow = true;
+				plantpot.position.set(-90,13,-290);
+				scene.add(plantpot);
+
+				loadModel('teapot', teapot);
+				teapot.castShadow = true;
+				teapot.receiveShadow = true;
+				teapot.position.set(-30,12,-150);
+				scene.add(teapot);
+
+				loadModel('toycar', toycar);
+				toycar.castShadow = true;
+				toycar.receiveShadow = true;
+				toycar.position.set(40,2,-240);
+				scene.add(toycar);
+
+				loadModel('tv',tv);
+				tv.castShadow = true;
+				tv.receiveShadow = true;
+				tv.position.set(-100,2,-110);
+				tv.rotation.y += 2;
+				tv.scale.set(2,2,2);
+				scene.add(tv);
+
+				for(i=0;i<3;i++)
+				{
+					loadLightModel('lightshade',lightshades[i]);
+					scene.add(lightshades[i]);
+				}
+				lightshades[0].position.set(0,58,-150);
+				lightshades[1].position.set(-50,58,-250);
+				lightshades[2].position.set(50,58,-250);
+
+				for(i=0;i<3;i++)
+				{
+					loadChairModel('chair',chairs[i]);
+					chairs[i].castShadow = true;
+					chairs[i].receiveShadow = true;
+					scene.add(chairs[i])
+				}
+				chairs[0].position.set(-60,2,-150);
+				chairs[1].position.set(20,2,-150);
+				chairs[2].position.set(-75,1,-270);
+				chairs[0].rotation.y += 4;
+				chairs[1].rotation.y = Math.PI / 1.25;
+				chairs[2].rotation.y = Math.PI / 3;
+
+			}
+
+			function loadModel(modelName, modelObject)
+			{	
+
+				var localObject;
+				loader.load('models/'+modelName+'.js', function (geometry, materials) 
+				{						
+					localObject = new THREE.Mesh(geometry, new THREE.MeshFaceMaterial(materials));
+					localObject.traverse( function( node ) { if ( node instanceof THREE.Mesh ) { node.castShadow = true;} } );
+					modelObject.add(localObject);					
+				});
+			}
+
+			//Following functions needed for blender models as they can't handle THREE.DoubleSide
+			//This function produces "Access Denied: NS_ERROR_DOM_BAD_URI" error on Aberystwyth onsite machines. Unsure why.
+			function loadChairModel(modelName, modelObject)
+			{	
+
+				var localObject;
+				var matChair = new THREE.MeshLambertMaterial({ map:txtrTable});
+				loader.load('models/'+modelName+'.js', function (geometry, materials) 
+				{						
+					localObject = new THREE.Mesh(geometry, matChair);
+					localObject.traverse( function( node ) { if ( node instanceof THREE.Mesh ) { node.castShadow = true;} } );
+					modelObject.add(localObject);					
+				});
+			}
+
+			function loadLightModel(modelName, modelObject)
+			{	
+
+				var localObject;
+				var matLight = new THREE.MeshLambertMaterial({ color:0x2A2A2A, side:THREE.DoubleSide});
+				loader.load('models/'+modelName+'.js', function (geometry, materials) 
+				{						
+					localObject = new THREE.Mesh(geometry, matLight);
+					modelObject.add(localObject);					
+				});
+			}
+
+			function loadPotModel(modelName, modelObject)
+			{	
+
+				var localObject;
+				var matLight = new THREE.MeshLambertMaterial({ color:0x1D5738, side:THREE.DoubleSide});
+				loader.load('models/'+modelName+'.js', function (geometry, materials) 
+				{						
+					localObject = new THREE.Mesh(geometry, matLight);
+					localObject.traverse( function( node ) { if ( node instanceof THREE.Mesh ) { node.castShadow = true;} } );
+					modelObject.add(localObject);					
+				});
+			}
+
+			//Builds the geometries, materials and meshes for the house.
+			function drawHouse()
+			{
+				txtrHouse = THREE.ImageUtils.loadTexture("images/house.png");
+				txtrKids = THREE.ImageUtils.loadTexture("images/wall.png");
+				txtrKids.wrapS = THREE.RepeatWrapping;
+				txtrKids.wrapT = THREE.RepeatWrapping;
+				txtrKids.repeat.set( 10, 10 );
+				txtrCarpet = THREE.ImageUtils.loadTexture("images/carpet.png");
+				txtrCarpet.wrapS = THREE.RepeatWrapping;
+				txtrCarpet.wrapT = THREE.RepeatWrapping;
+				txtrCarpet.repeat.set( 512/110, 512/110 );
+				txtrDoor = THREE.ImageUtils.loadTexture("images/door.png");
+				txtrRoofTiles = THREE.ImageUtils.loadTexture("images/rooftiles.png");
+				txtrRoofTiles.wrapS = THREE.RepeatWrapping;
+				txtrRoofTiles.wrapT = THREE.RepeatWrapping; 
+				txtrRoofTiles.repeat.set( 10, 10 );
+				//PlaneBufferGeometry does not support facevertex mapping
+				txtrHousePart = THREE.ImageUtils.loadTexture("images/plane_wall.png");
+				txtrHousePart.repeat.set(1, 0.5);
+				//Considered using transparent textures for windows
+				//var txtrWindow = THREE.ImageUtils.loadTexture("images/window.png");
+
+				geoHouse1 = new THREE.BoxGeometry(220, 60, 100);
+				matHouse1 = new THREE.MeshLambertMaterial({map:txtrHouse, side: THREE.DoubleSide });
+				houseRoom1 = new THREE.Mesh(geoHouse1, matHouse1);
+				houseRoom1.castShadow = true;
+				houseRoom1.receiveShadow = true;
+				houseRoom1.position.set(0,31,-150);
+				scene.add(houseRoom1);
+
+				//builds plane geometries around windows to prevent clipping
+				houseParts = [];
+				houseParts2 = [];
+				geoHousePart1 = new THREE.PlaneBufferGeometry(55,20);
+				matHousePart = new THREE.MeshLambertMaterial({map:txtrHousePart, side: THREE.DoubleSide });
+				buildHouseWindowWalls();
+
+				geoHouse2 = new THREE.BoxGeometry(110, 60, 100);
+				houseRoom2 = new THREE.Mesh(geoHouse2, matHouse1);
+				houseRoom2.castShadow = true;
+				houseRoom2.receiveShadow = true;
+				houseRoom2.position.set(-55,31,-250.1);
+				scene.add(houseRoom2);
+
+				geoHouse3 = new THREE.BoxGeometry(110, 60, 100);
+				matKids = new THREE.MeshBasicMaterial({ map:txtrKids, side: THREE.DoubleSide });
+				matCarpet = new THREE.MeshBasicMaterial({ map:txtrCarpet, side: THREE.DoubleSide });
+
+				matKidsRoom = [
+				matHouse1,
+				matCarpet
+				];
+
+				houseRoom3 = new THREE.Mesh(geoHouse3, new THREE.MeshFaceMaterial(matKidsRoom));
+				houseRoom3.castShadow = true;
+				houseRoom3.receiveShadow = true;
+				houseRoom3.position.set(55.1,31,-250.1);
+				scene.add(houseRoom3);
+
+				doors = [];
+				geoDoor = new THREE.BoxGeometry(16, 32, 2);
+				matDoor = new THREE.MeshLambertMaterial({ map:txtrDoor, side: THREE.DoubleSide });
+				for (i=0;i<3;i++)
+				{
+					doors[i] = new THREE.Mesh(geoDoor,matDoor);
+					scene.add(doors[i]);
+				}
+				doors[0].position.set(55, 17, -100);
+				doors[1].position.set(-55, 17, -200);
+				doors[2].position.set(0, 17, -250);
+				doors[2].rotation.y = Math.PI / 2;
+
+				windows = [];
+				geoWindow = new THREE.BoxGeometry(55, 20, 1);
+				matWindow = new THREE.MeshLambertMaterial({ color:0XADFFFB, transparent: true, opacity: 0.1, side:THREE.DoubleSide});
+				for (i=0;i<2;i++)
+				{
+					windows[i] = new THREE.Mesh(geoWindow, matWindow);
+					scene.add(windows[i]);
+				}
+				windows[0].position.set(-27.5, 31, -100);
+				windows[1].position.set(-27.5, 31, -300);
+
+				buildKidsRoomWalls();
+
+				buildRoof();
+
+				initHouseTextures();
+			}
+
+			//Creates a 4x3 grid of planes to replace the front/back house walls. The plane on top of
+			//the window is then removed later in the code.
+			function buildHouseWindowWalls()
+			{
+				var currentX, currentY;
+				currentX = -82.5; //starting coordinates for the grid, takes the center positions of the planes
+				currentY = 11;
+				i=0;
+				for (j=0;j<3;j++)
+				{
+					currentX = -82.5;
+					for (k=0;k<4;k++)
+					{	
+						if (i==5)
+						{
+							
+						} 
+						else
+						{
+							houseParts[i] = new THREE.Mesh(geoHousePart1,matHousePart);
+							houseParts[i].receiveShadow = true;
+							houseParts[i].position.set(currentX,currentY,-100);
+							scene.add(houseParts[i]);
+
+							houseParts2[i] = new THREE.Mesh(geoHousePart1,matHousePart);
+							houseParts2[i].receiveShadow = true;
+							houseParts2[i].position.set(currentX,currentY,-300.1);
+							scene.add(houseParts2[i]);
+						}
+						i += 1;
+						currentX += 55;
+					}
+					currentY += 20;
+				}
+			}
+
+			function buildKidsRoomWalls()
+			{
+            	//Separate array for kids room to keep the outside of the house wooden
+            	kidsWall = [];
+				//Different geometries due to different dimensions for the room
+				geoKids = new THREE.PlaneBufferGeometry(109.8,60);
+				geoKids2 = new THREE.PlaneBufferGeometry(99.9,60);
+				kidsWall[0] = new THREE.Mesh(geoKids, matKids);
+				kidsWall[1] = new THREE.Mesh(geoKids, matKids);
+				kidsWall[2] = new THREE.Mesh(geoKids2, matKids);
+				kidsWall[3] = new THREE.Mesh(geoKids2, matKids);
+				kidsWall[2].rotation.y = Math.PI / 2;
+				kidsWall[3].rotation.y = Math.PI / 2;
+				kidsWall[0].position.set(55,31,-299);
+				kidsWall[1].position.set(55,31,-200.2);
+				kidsWall[2].position.set(109.9,31,-250.1);
+				kidsWall[3].position.set(0.2,31,-250.1);
+				scene.add(kidsWall[0]);
+				scene.add(kidsWall[1]);
+				scene.add(kidsWall[2]);
+				scene.add(kidsWall[3]);
+			}
+
+			//Builds the roof using polygon techniques, by declaring a series of vectors it
+			//can apply a face to the space between the vertices
+			function buildRoof()
+			{
+				var vertRoof = [
+				new THREE.Vector3(220, 61, 100),
+				new THREE.Vector3(180, 101, 100),
+				new THREE.Vector3(0, 61, 100),
+				new THREE.Vector3(220, 61, 200),
+				new THREE.Vector3(180, 101, 200),
+				new THREE.Vector3(0, 61, 200),
+				];
+
+				geoRoof = new THREE.Geometry();
+				for (i=0; i<vertRoof.length;i++) 
+				{
+					geoRoof.vertices.push(vertRoof[i]);
+				}
+				geoRoof.faces.push(new THREE.Face3( 0, 1, 2));
+				geoRoof.faces.push(new THREE.Face3( 3, 5, 4));
+				geoRoof.faces.push(new THREE.Face3( 0, 1, 4));
+				geoRoof.faces.push(new THREE.Face3( 0, 3, 4));
+				geoRoof.faces.push(new THREE.Face3( 1, 2, 5));
+				geoRoof.faces.push(new THREE.Face3( 1, 4, 5));
+				geoRoof.computeFaceNormals();
+
+
+				matRoof = new THREE.MeshLambertMaterial({map:txtrHouse, side: THREE.DoubleSide});
+				matRoofTiles = new THREE.MeshLambertMaterial({map:txtrRoofTiles, side: THREE.DoubleSide});
+
+				var matRoofs = [
+				matRoof,
+				matRoofTiles
+				];
+
+				roof1 = new THREE.Mesh( geoRoof, new THREE.MeshFaceMaterial(matRoofs));
+				roof1.castShadow = true;
+				roof1.position.set(-110,0,-300);
+				scene.add(roof1);
+
+				roof2 = new THREE.Mesh( geoRoof, new THREE.MeshFaceMaterial(matRoofs));
+				roof2.castShadow = true;
+				roof2.position.set(-110,0,-400.1);
+				scene.add(roof2);
+			}
+
+			//Maps the textures using different techniques. The main house is built using UV mapping with
+			//the faceVertexUvs arrays. The kids room has multiple materials to ensure the outside of the
+			//house remains the same, while the inside can have different textures such as a repeating carpet
+			function initHouseTextures()
+			{
+				var houseSplit = [
+				new THREE.Vector2( 0, 1),
+				new THREE.Vector2( 0,.5),
+				new THREE.Vector2(.5,.5),
+				new THREE.Vector2(.5, 1),
+				new THREE.Vector2( 0, 0),
+				new THREE.Vector2(.5, 0),
+				new THREE.Vector2( 1,.5),
+				new THREE.Vector2( 1, 1)
+				]; 
+
+				for(i=0;i<11;i++)
+				{
+					geoHouse1.faceVertexUvs[0][i] = [ houseSplit[0], houseSplit[1], houseSplit[3] ];
+					i++;
+					geoHouse1.faceVertexUvs[0][i] = [ houseSplit[1], houseSplit[2], houseSplit[3] ];
+				}
+
+                //BOTTOM
+                geoHouse1.faceVertexUvs[0][6] = [ houseSplit[1], houseSplit[4], houseSplit[2] ];
+                geoHouse1.faceVertexUvs[0][7] = [ houseSplit[4], houseSplit[5], houseSplit[2] ];
+
+                //replace front face wall with plane wall to fit window
+                delete geoHouse1.faces[8];
+                delete geoHouse1.faces[9];
+                geoHouse1.faces = geoHouse1.faces.filter( function(v) { return v; });
+                geoHouse1.elementsNeedUpdate = true;
+
+                for(i=0;i<11;i++)
+                {
+                	geoHouse2.faceVertexUvs[0][i] = [ houseSplit[0], houseSplit[1], houseSplit[3] ];
+                	i++;
+                	geoHouse2.faceVertexUvs[0][i] = [ houseSplit[1], houseSplit[2], houseSplit[3] ];
+                }
+
+                //BOTTOM
+                geoHouse2.faceVertexUvs[0][6] = [ houseSplit[1], houseSplit[4], houseSplit[2] ];
+                geoHouse2.faceVertexUvs[0][7] = [ houseSplit[4], houseSplit[5], houseSplit[2] ];
+
+                //replace back face wall with plane wall to fit window
+                delete geoHouse2.faces[10];
+                delete geoHouse2.faces[11];
+                geoHouse2.faces = geoHouse2.faces.filter( function(v) { return v; });
+                geoHouse2.elementsNeedUpdate = true;
+
+                for(i=0;i<11;i++)
+                {
+                	geoHouse3.faces[i].materialIndex = 0;
+                	geoHouse3.faceVertexUvs[0][i] = [ houseSplit[0], houseSplit[1], houseSplit[3] ];
+                	i++;
+                	geoHouse3.faces[i].materialIndex = 0;
+                	geoHouse3.faceVertexUvs[0][i] = [ houseSplit[1], houseSplit[2], houseSplit[3] ];
+                }
+
+            	//BOTTOM CARPET
+            	geoHouse3.faces[6].materialIndex = 1;
+            	geoHouse3.faces[7].materialIndex = 1;
+
+            	delete geoHouse3.faces[10];
+            	delete geoHouse3.faces[11];
+            	geoHouse3.faces = geoHouse3.faces.filter( function(v) { return v; });
+            	geoHouse3.elementsNeedUpdate = true;
+
+            	geoRoof.faceVertexUvs[0][0] = [ houseSplit[0], houseSplit[1], houseSplit[3] ];
+            	geoRoof.faceVertexUvs[0][1] = [ houseSplit[1], houseSplit[2], houseSplit[3] ];
+            	//ROOFSIDE EAST
+            	geoRoof.faces[2].materialIndex = 1;
+            	geoRoof.faces[3].materialIndex = 1;
+            	geoRoof.faces[4].materialIndex = 1;
+            	geoRoof.faces[5].materialIndex = 1;
+            	geoRoof.faceVertexUvs[0][2] = [ houseSplit[2], houseSplit[3], houseSplit[7] ];
+            	geoRoof.faceVertexUvs[0][3] = [ houseSplit[2], houseSplit[6], houseSplit[7] ];
+            	//ROOFSIDE WEST
+            	geoRoof.faceVertexUvs[0][4] = [ houseSplit[2], houseSplit[3], houseSplit[7] ];
+            	geoRoof.faceVertexUvs[0][5] = [ houseSplit[2], houseSplit[6], houseSplit[7] ];
+            }
+
+            //Builds the furniture that wasn't created in Blender using various techniques, such
+            //as Extrude geometries for the pillow and boxes/planes for rugs, beds and tables.
+            function addFurniture()
+            {
+            	txtrRug = THREE.ImageUtils.loadTexture("images/rug1.png");
+            	txtrKidsRug = THREE.ImageUtils.loadTexture("images/kidsrug2.png");
+            	txtrBed = THREE.ImageUtils.loadTexture("images/bed.png");
+            	txtrTable = THREE.ImageUtils.loadTexture("images/table_pic.png");
+            	var shapePillow = new THREE.Shape();
+            	shapePillow.moveTo(0,0);
+            	shapePillow.lineTo(0,3);
+            	shapePillow.lineTo(15,3);
+            	shapePillow.lineTo(15,0);
+            	shapePillow.lineTo(0,0);
+            	var extrPillow = {
+            		steps: 2,
+            		amount: 10,
+            		bevelEnabled: true,
+            		bevelThickness: 1,
+            		bevelSize: 1,
+            		bevelSegments: 3
+            	};
+            	geoPillow = new THREE.ExtrudeGeometry(shapePillow, extrPillow);
+            	matPillow = new THREE.MeshLambertMaterial({color:0xFCFBE0});
+            	pillow = new THREE.Mesh(geoPillow, matPillow);
+            	pillow.position.set(85,11,-296);
+            	scene.add(pillow);
+
+            	geoBed = new THREE.BoxGeometry(30,10,50);
+            	matBed = new THREE.MeshLambertMaterial({side:THREE.DoubleSide, map:txtrBed});
+            	matBed2 = new THREE.MeshLambertMaterial({side:THREE.DoubleSide, color:0xA20303});
+
+            	var matBeds = [
+            	matBed,
+            	matBed2
+            	];
+
+            	bed = new THREE.Mesh(geoBed, new THREE.MeshFaceMaterial(matBeds));
+            	bed.position.set(94, 6, -274);
+            	scene.add(bed);
+
+            	geoRug = new THREE.PlaneBufferGeometry(50, 100);
+            	matRug = new THREE.MeshLambertMaterial({side:THREE.DoubleSide, map: txtrRug});
+            	rug = new THREE.Mesh(geoRug, matRug);
+            	rug.receiveShadow = true;
+            	rug.rotation.x = Math.PI / 2;
+            	rug.rotation.z = Math.PI / 2;
+            	rug.position.set(-20, 2,-150);
+            	scene.add(rug);
+
+            	geoKidsRug = new THREE.PlaneBufferGeometry(64, 32)
+            	matKidsRug = new THREE.MeshLambertMaterial({side:THREE.DoubleSide, map: txtrKidsRug});
+            	kidsRug = new THREE.Mesh(geoKidsRug, matKidsRug);
+            	kidsRug.receiveShadow = true;
+            	kidsRug.rotation.x = Math.PI / 2;
+            	kidsRug.rotation.z = Math.PI / 2
+            	kidsRug.position.set(50, 2, -260);
+            	scene.add(kidsRug);
+
+
+            	//generate two tables in different rooms, keep table parts together in array
+            	var tableParts = [];
+
+            	geoTable = new THREE.BoxGeometry(50, 3, 25);
+            	geoTableLeg = new THREE.BoxGeometry(2, 9, 2);
+            	matTable = new THREE.MeshLambertMaterial({side:THREE.DoubleSide, map:txtrTable});
+            	tableParts[0] = new THREE.Mesh(geoTable, matTable);
+            	tableParts[0].castShadow = true;
+            	tableParts[0].receiveShadow = true;
+            	tableParts[1] = new THREE.Mesh(geoTable, matTable);
+            	tableParts[1].castShadow = true;
+            	tableParts[1].receiveShadow = true;
+            	for (i=2;i<10;i++) 
+            	{
+            		tableParts[i] = new THREE.Mesh(geoTableLeg, matTable);
+            		tableParts[i].castShadow = true;
+            		tableParts[i].receiveShadow = true;
+            	}
+            	//TABLE 1
+            	tableParts[0].position.set(-20,10,-150);
+            	tableParts[2].position.set(-44, 4,-138.5);
+            	tableParts[3].position.set(-44, 4,-161.5);
+            	tableParts[4].position.set( 4, 4,-138.5);
+            	tableParts[5].position.set( 4, 4,-161.5);
+            	//TABLE 2
+            	tableParts[1].position.set(-97,12,-274);
+            	tableParts[6].position.set(-108.5, 6,-250);
+            	tableParts[7].position.set(-85.5, 6,-250);
+            	tableParts[8].position.set(-85.5, 6,-298);
+            	tableParts[9].position.set(-108.5, 6,-298);
+            	tableParts[1].rotation.y = Math.PI / 2;
+            	for(i=0;i<10;i++)
+            	{          		
+            		scene.add(tableParts[i]);
+            	}
+            	textureFurniture();
+            }
+
+            //Textures the furniture created in the previous function
+            function textureFurniture()
+            {
+            	//use coordinates to rotate texture on bed
+            	var bedSplit = [
+            	new THREE.Vector2( 0, 0),
+            	new THREE.Vector2( 0, 1),
+            	new THREE.Vector2( 1, 0),
+            	new THREE.Vector2( 1, 1),
+            	];
+
+            	geoBed.faceVertexUvs[0][2] = [ bedSplit[1], bedSplit[3], bedSplit[2] ];
+            	geoBed.faceVertexUvs[0][3] = [ bedSplit[1], bedSplit[0], bedSplit[2] ];
+
+            	for (i=0;i<12;i++)
+            	{
+            		geoBed.faces[i].materialIndex = 1;
+            	}
+            	geoBed.faces[2].materialIndex = 0;
+            	geoBed.faces[3].materialIndex = 0;
+            	geoBed.faces[4].materialIndex = 0;
+            	geoBed.faces[5].materialIndex = 0;
+            }
+
+            //Creates birds that will fly around using rotation/translation later. 
+            function drawBirds()
+            {
+            	txtrBird = THREE.ImageUtils.loadTexture("images/bird.png");
+            	geoBird = new THREE.PlaneBufferGeometry(32,16);
+            	matBird = new THREE.MeshLambertMaterial({map:txtrBird, transparent:true, side:THREE.DoubleSide});
+            	for (i=0; i<3;i++)
+            	{
+            		birds[i] = new THREE.Mesh(geoBird, matBird);
+            		birds[i].rotation.x = Math.PI / 2;
+            		birds[i].castShadow = true;
+            		birds[i].receiveShadow = true;
+            	}
+
+            	birds[0].position.set(-225, 650, -450);
+            	birds[1].position.set(-250, 750, -450);
+            	birds[2].position.set(-220, 850, -425);
+            	scene.add(birds[0]);
+            	scene.add(birds[1]);
+            	scene.add(birds[2]);
+            }
+
+            //Animates the birds so they move around and face the direction they're heading
+            function animations()
+            {	
+            	birdArc += 0.01;
+            	birdArc2 -= 0.01;
+            	//x z set how big rotations are
+            	var x = 0.4;
+            	var z = 0.5;
+
+            	birds[0].rotation.z -= 0.01;
+            	birds[0].position.x += x * Math.cos(birdArc) + z * Math.sin(birdArc);
+            	birds[0].position.z += z * Math.cos(birdArc) - x * Math.sin(birdArc);
+
+            	birds[1].rotation.z += 0.01;
+            	birds[1].position.x += x * Math.cos(birdArc2) + z * Math.sin(birdArc2);
+            	birds[1].position.z += z * Math.cos(birdArc2) - x * Math.sin(birdArc2);
+
+            	birds[2].rotation.z -= 0.01;
+            	birds[2].position.x += x * Math.cos(birdArc) + z * Math.sin(birdArc);
+            	birds[2].position.z += z * Math.cos(birdArc) - x * Math.sin(birdArc);
+
+            }
+
+            //Animates a tv screen showing static
+            function tvPlay()
+            {
+            	txtrStatic = THREE.ImageUtils.loadTexture("images/static.png");
+            	animStatic = new TextureAnimator(txtrStatic, 5, 1, 5, 75);
+            	matStatic = new THREE.MeshLambertMaterial({map:txtrStatic, side:THREE.DoubleSide});
+            	geoStatic = new THREE.PlaneBufferGeometry(12,10);
+            	static = new THREE.Mesh(geoStatic,matStatic);
+            	static.position.set(-98,12,-111);
+            	static.rotation.y += 2;
+            	scene.add(static);
+            }
+
+            //Methods for bracketed L-Systems used for plants
+            function Rules() 
+            {
+            	this.axiom = "X";
+            	this.mainRule = "FF";
+            	this.Rule2 = "F[+X]F[-X]+X";  
+            }
+
+            function Params() 
+            {
+            	this.iterations= 5;
+  				this.delta= 20; // incremental angle
+  				this.thetaRandomness= 0;
+  				this.alpha= 90; // heading direction
+  				this.step= 4;  // branch length
+  				this.scaleRandomness= 0;
+  				this.constantWidth= false;
+  				this.slope = 0;
+  			}
+
+  			function GetAxiomTree()
+  			{
+  				var Waxiom = rules.axiom;
+  				var newF = rules.mainRule;
+  				var newf = 'ff';
+  				var newx = rules.Rule2;
+  				var level = params.iterations;
+
+  				while (level > 0) {        
+  					var T = '';   
+  					for (var j=0; j < Waxiom.length; j++) {
+  						var a = Waxiom[j];
+  						if (a == 'F'){T += newF;}
+  						else
+  							if (a == 'f'){T += newf;}
+  						else                   
+  							if (a == 'X'){T += newx;}
+  						else
+  							T += a;
+  					}
+  					Waxiom = T;
+  					level--;
+  				}
+  				return Waxiom;
+  			}
+
+  			function drawTree(x, y) {
+
+  				Plant = GetAxiomTree();
+
+  				var n = Plant.length;
+  				var stackX = [], stackY = [], stackA = [];    
+  				var delta = params.delta * Math.PI / 180; 
+  				var step = params.step;
+  				var alpha = - params.alpha * Math.PI / 180;    
+  				var x, y;  
+  				var x0 = x, y0 = y;  
+
+  				for (var j=0; j<Plant.length; j++){   
+			        //console.log(Plant.length);
+			        var a = Plant[j];
+			        
+			        if (a == "+") {alpha -= delta;}
+			        if (a == "-") {alpha += delta;}
+			        // move forward and draw a line
+			        if (a == "F") {
+			        	var lwidth = Math.floor(5/Math.sqrt(Math.sqrt(j+2))+1);
+			        	x = x0 + Math.cos(alpha)*step;
+			        	y = y0 + Math.sin(alpha)*step;
+
+			        	geoPlant.vertices.push(new THREE.Vector3(x0,y0,0));           
+			        	x0 = x; y0 = y;
+			        }        
+			        // move without drawing a line
+			        if (a == "f") {
+			        	x0 = x0 + Math.cos(alpha)*step;
+			        	y0 = y0 + Math.sin(alpha)*step;
+			        }
+			        if (a == "[") {
+			        	stackX.push(x0);
+			        	stackY[stackY.length] =  y0;
+			        	stackA[stackA.length] = alpha;       
+
+			        }
+			        if (a == "]"){
+			        	x0 = stackX.pop();
+			        	y0 = stackY.pop();
+			        	alpha = stackA.pop();
+			        }     
+
+			    }
+
+			};
+
+			function drawPlants()
+			{
+				geoPlant = new THREE.Geometry();
+				drawTree(5,5);
+				matPlant = new THREE.LineBasicMaterial({color: 0x322D18});
+				plants[0] = new THREE.Line(geoPlant,matPlant);
+				plants[0].rotation.z += Math.PI;
+				plants[0].scale.set(0.1,0.1,0.1);
+				for (i=1;i<6;i++)
+				{
+					plants[i] = plants[0].clone();
+				}
+
+            	//Alter the rules for different plant
+            	rules.axiom = "F";
+            	rules.mainRule = "F[+F]F[-F]F";
+            	rules.Rule2 = "";
+            	params.iterations = 4;
+            	params.delta = 25;
+            	params.step = 2.5; 
+            	geoPlant = new THREE.Geometry();
+            	drawTree(5,5);
+            	plants[6] = new THREE.Line(geoPlant,matPlant);
+            	plants[6].rotation.z += Math.PI;
+            	plants[6].scale.set(0.1,0.1,0.1);
+
+            	plants[0].position.set(-10,0,-75);
+            	plants[1].position.set(-30,0,-75);
+            	plants[2].position.set(-50,0,-75);
+            	plants[3].position.set(-10,0,-330);
+            	plants[4].position.set(-30,0,-330);
+            	plants[5].position.set(-50,0,-330);
+            	plants[6].position.set(-90,16,-290);
+            	for (i=0;i<7;i++)
+            	{
+            		plants[i].castShadow = true;
+            		scene.add(plants[i]);
+            	}
+            }
+
+            //Initialises keyboard controls which move the camera and the toycar. Also
+            //allows the user to "fly" using the f key
+            function initControls()
+            {
+            	initMouseControls();
+            	controls = new THREE.PointerLockControls(camera);
+            	scene.add(controls.getObject());	
+            	flyingEnabled = false;
+            	var onKeyPressDown = function ( event )
+            	{
+            		switch ( event.keyCode ) 
+            		{
+
+						case 87: // up
+						moveForward = true;
+						break;
+
+						case 65: // left
+						moveLeft = true;
+						break;
+
+						case 83: // down
+						moveBackward = true;
+						break;
+
+						case 68: // right
+						moveRight = true;
+						break;
+
+						case 38: // car up
+						carForward = true;
+						break;
+
+						case 37: // car left
+						carLeft = true;
+						break;
+
+						case 40: // car reverse
+						carBackward = true;
+						break;
+
+						case 39: // car right
+						carRight = true;
+						break;
+
+						case 70: // f
+						if (flyingEnabled == false)
+						{
+							flyingEnabled = true;
+						}
+						else 
+						{
+							flyingEnabled = false;
+						}
+					}
+				};
+
+				var onKeyPressUp = function ( event ) 
+				{
+
+					switch( event.keyCode ) 
+					{
+
+						case 87: // up
+						moveForward = false;
+						break;
+
+						case 65: // left
+						moveLeft = false;
+						break;
+
+						case 83: // down
+						moveBackward = false;
+						break;
+
+						case 68: // right
+						moveRight = false;
+						break;
+
+						case 38: // car up
+						carForward = false;
+						break;
+
+						case 37: // car left
+						carLeft = false;
+						break;
+
+						case 40: // car reverse
+						carBackward = false;
+						break;
+
+						case 39: // car right
+						carRight = false;
+						break;
+					}
+
+				};
+				document.addEventListener( 'keydown', onKeyPressDown, false );
+				document.addEventListener( 'keyup', onKeyPressUp, false );		
+			}
+
+			//Initialises pointer lock controls that let the user look around inside the 
+			//virtual world
+			function initMouseControls()
+			{
+				havePointerLock = 'pointerLockElement' in document || 
+				'mozPointerLockElement' in document || 
+				'webkitPointerLockElement' in document;
+				var element = document.body;
+				if (havePointerLock) 
+				{
+					var pointerlockchange = function (event) 
+					{
+						if (document.pointerLockElement === element ||
+							document.mozPointerLockElement === element ||
+							document.webkitPointerLockElement === element) 
+						{
+							controlsEnabled = true;
+							controls.enabled = true;
+						} 
+						else 
+						{
+							controlsEnabled = false;
+							controls.enabled = false;
+						}
+					};
+					document.addEventListener('pointerlockchange', pointerlockchange, false);
+					document.addEventListener('mozpointerlockchange', pointerlockchange, false);
+					document.addEventListener('webkitpointerlockchange', pointerlockchange, false);
+
+					var requestPointerLock = function(event)
+					{
+						element.requestPointerLock = element.requestPointerLock || element.mozRequestPointerLock || element.webkitRequestPointerLock;
+						element.requestPointerLock();
+					};
+					element.addEventListener('click', requestPointerLock, false);
+				}
+			}
+
+			//Translates the camera depending on the direction the user is moving
+			//Also animations wern't working when moving, so animStatic was moved here
+			//Handles toy car translations also
+			function userMovement()
+			{	
+				var delta = clock.getDelta();
+				animStatic.update(1000 * delta);
+
+				if (controlsEnabled) 
+				{
+					var walkingSpeed = 400.0;
+					var carmovespeed = 100.0;
+
+					movespeed.x -= movespeed.x * 10.0 * delta;
+					movespeed.z -= movespeed.z * 10.0 * delta;
+					movespeed.y -= movespeed.y * 10.0 * delta;
+
+					carspeed.z -= carspeed.z * 10.0 * delta;
+
+					if (flyingEnabled == true)
+					{
+						if (moveForward) movespeed.y += walkingSpeed * delta;
+						if (moveBackward) movespeed.y -= walkingSpeed * delta;
+					}
+					else
+					{
+						if (moveForward) movespeed.z -= walkingSpeed * delta;
+						if (moveBackward) movespeed.z += walkingSpeed * delta;
+					}
+					if (moveLeft) movespeed.x -= walkingSpeed * delta;
+					if (moveRight) movespeed.x += walkingSpeed * delta;
+
+					controls.getObject().translateX(movespeed.x * delta);
+					controls.getObject().translateY(movespeed.y * delta);
+					controls.getObject().translateZ(movespeed.z * delta);					
+
+					if (carForward) carspeed.z -= carmovespeed * delta;
+					if (carBackward) carspeed.z += carmovespeed * delta;
+					if (carLeft) toycar.rotation.y += 2 * delta;
+					if (carRight) toycar.rotation.y -= 2 * delta;
+
+					toycar.translateZ(carspeed.z * delta);
+
+					//Enables floor collision
+					if (controls.getObject().position.y < 10) 
+					{
+						movespeed.y = 0;
+						controls.getObject().position.y = 10;
+						canJump = true;
+					}
+				}
+			}
+
+			//Animation function from: http://stemkoski.github.io/Three.js/Texture-Animation.html
+			function TextureAnimator(texture, tilesHoriz, tilesVert, numTiles, tileDispDuration) 
+			{	
+			// note: texture passed by reference, will be updated by the update function.
+
+			this.tilesHorizontal = tilesHoriz;
+			this.tilesVertical = tilesVert;
+			// how many images does this spritesheet contain?
+			//  usually equals tilesHoriz * tilesVert, but not necessarily,
+			//  if there at blank tiles at the bottom of the spritesheet. 
+			this.numberOfTiles = numTiles;
+			texture.wrapS = texture.wrapT = THREE.RepeatWrapping; 
+			texture.repeat.set( 1 / this.tilesHorizontal, 1 / this.tilesVertical );
+
+			// how long should each image be displayed?
+			this.tileDisplayDuration = tileDispDuration;
+
+			// how long has the current image been displayed?
+			this.currentDisplayTime = 0;
+
+			// which image is currently being displayed?
+			this.currentTile = 0;
+
+			this.update = function( milliSec )
+			{
+				this.currentDisplayTime += milliSec;
+				while (this.currentDisplayTime > this.tileDisplayDuration)
+				{
+					this.currentDisplayTime -= this.tileDisplayDuration;
+					this.currentTile++;
+					if (this.currentTile == this.numberOfTiles)
+						this.currentTile = 0;
+					var currentColumn = this.currentTile % this.tilesHorizontal;
+					texture.offset.x = currentColumn / this.tilesHorizontal;
+					var currentRow = Math.floor( this.currentTile / this.tilesHorizontal );
+					texture.offset.y = currentRow / this.tilesVertical;
+				}
+			};
+		}	
+	</script>
+</body>
+</html>
